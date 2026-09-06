@@ -82,6 +82,15 @@
   /* plate gauge */
   .result-row{display:flex;align-items:center;gap:26px;flex-wrap:wrap;margin-top:20px;padding-top:20px;border-top:1px dashed var(--line);}
   .dual-rings{display:flex;justify-content:center;gap:36px;flex-wrap:wrap;margin-top:22px;padding-top:20px;border-top:1px dashed var(--line);}
+  .sub-status-box{text-align:center;padding:36px 20px;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;margin-top:12px;}
+  .sub-status-box.expired{border-color:var(--bad);}
+  .sub-icon{font-size:40px;margin-bottom:8px;}
+  .sub-days{font-family:'Cairo';font-weight:900;font-size:44px;color:var(--brass);}
+  .sub-status-box.expired .sub-days{color:var(--bad);font-size:24px;}
+  .sub-days-label{font-size:13px;color:var(--ink-dim);font-weight:700;margin-top:2px;}
+  .sub-title{font-family:'Cairo';font-weight:800;font-size:20px;color:var(--brass);}
+  .sub-desc{font-size:13.5px;color:var(--ink-dim);margin-top:14px;line-height:1.6;}
+  .sub-desc b{color:var(--ink);font-family:'Cairo';}
   .mini-log-wrap{margin-top:20px;padding-top:18px;border-top:1px dashed var(--line);}
   .mini-log-title{font-size:12.5px;color:var(--ink-dim);font-weight:700;margin:0 0 10px;}
   .plate-small{width:120px;height:120px;}
@@ -238,6 +247,7 @@
       <button data-view="meals">المطاعم</button>
       <button data-view="suggested">وجباتنا</button>
       <button data-view="workout">جداولنا</button>
+      <button data-view="subscription">المدة المتبقية</button>
     </nav>
   </header>
 
@@ -452,6 +462,16 @@
     </div>
   </section>
 
+  <!-- ===================== SUBSCRIPTION VIEW ===================== -->
+  <section id="view-subscription" class="view">
+    <div class="card">
+      <p class="eyebrow">حسابك</p>
+      <h2>المدة المتبقية</h2>
+      <p class="sub" id="subSub">تفاصيل صلاحية كودك بالتطبيق.</p>
+      <div id="subContent"></div>
+    </div>
+  </section>
+
   <footer>الأرقام الغذائية والتمارين تقديرية وللإرشاد العام، مو بديل عن مختص تغذية أو مدرب.</footer>
 </div>
 
@@ -472,12 +492,13 @@ const VERIFY_ENDPOINT = 'https://thabat-verify.YOUR-SUBDOMAIN.workers.dev';
 if(localStorage.getItem(REMEMBER_KEY)==='1'){
   gateEl.style.display='none';
   mainWrapEl.style.display='block';
+  renderSubscriptionStatus();
 }
 
 async function tryUnlock(){
   const val = gateInput.value.trim();
-  if(val.length!==8){
-    gateError.textContent = 'أدخل الكود المكوّن من ٨ أرقام كاملاً';
+  if(val.length!==8 && val.length!==6){
+    gateError.textContent = 'أدخل الكود كاملاً (٦ أو ٨ أرقام)';
     return;
   }
   gateBtn.disabled = true;
@@ -493,8 +514,17 @@ async function tryUnlock(){
       if(rememberMe.checked){
         localStorage.setItem(REMEMBER_KEY, '1');
       }
+      if(data.isMaster){
+        localStorage.setItem('thabat_sub_master', '1');
+        localStorage.removeItem('thabat_sub_activated_at');
+      } else if(data.activatedAt){
+        localStorage.setItem('thabat_sub_activated_at', String(data.activatedAt));
+        localStorage.setItem('thabat_sub_validity_days', String(data.validityDays || 365));
+        localStorage.removeItem('thabat_sub_master');
+      }
       gateEl.style.display='none';
       mainWrapEl.style.display='block';
+      renderSubscriptionStatus();
     } else {
       showGateError();
     }
@@ -516,6 +546,46 @@ function showGateError(){
 gateBtn.addEventListener('click', tryUnlock);
 gateInput.addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
 gateInput.addEventListener('input', ()=>{ gateInput.value = gateInput.value.replace(/[^0-9]/g,''); });
+
+function renderSubscriptionStatus(){
+  const el = document.getElementById('subContent');
+  if(!el) return;
+
+  if(localStorage.getItem('thabat_sub_master')==='1'){
+    el.innerHTML = `
+      <div class="sub-status-box">
+        <div class="sub-icon">♾️</div>
+        <div class="sub-title">اشتراكك دائم</div>
+        <div class="sub-desc">كودك هو كود المالك — ما له تاريخ انتهاء.</div>
+      </div>`;
+    return;
+  }
+
+  const activatedAt = parseInt(localStorage.getItem('thabat_sub_activated_at'), 10);
+  const validityDays = parseInt(localStorage.getItem('thabat_sub_validity_days'), 10) || 365;
+
+  if(!activatedAt){
+    el.innerHTML = `<div class="sub-status-box"><div class="sub-desc">ما فيه معلومات عن تفعيل كودك بعد.</div></div>`;
+    return;
+  }
+
+  const msPerDay = 1000*60*60*24;
+  const expiryMs = activatedAt + validityDays*msPerDay;
+  const now = Date.now();
+  const remainingDays = Math.max(0, Math.ceil((expiryMs - now)/msPerDay));
+  const expiryDate = new Date(expiryMs);
+  const dateStr = expiryDate.toLocaleDateString('ar-SA', { year:'numeric', month:'long', day:'numeric' });
+
+  const expired = remainingDays <= 0;
+
+  el.innerHTML = `
+    <div class="sub-status-box ${expired ? 'expired':''}">
+      <div class="sub-icon">${expired ? '⛔' : '📅'}</div>
+      <div class="sub-days">${expired ? 'انتهى الاشتراك' : remainingDays}</div>
+      ${expired ? '' : '<div class="sub-days-label">يوم متبقي</div>'}
+      <div class="sub-desc">${expired ? 'انتهت صلاحية كودك — تواصل معنا لتفعيل كود جديد.' : `ينتهي اشتراكك في: <b>${dateStr}</b>`}</div>
+    </div>`;
+}
 gateInput.focus();
 
 /* ---------------- navigation ---------------- */
