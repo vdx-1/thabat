@@ -493,6 +493,7 @@ if(localStorage.getItem(REMEMBER_KEY)==='1'){
   gateEl.style.display='none';
   mainWrapEl.style.display='block';
   renderSubscriptionStatus();
+  loadUserProfile();
 }
 
 async function tryUnlock(){
@@ -514,6 +515,7 @@ async function tryUnlock(){
       if(rememberMe.checked){
         localStorage.setItem(REMEMBER_KEY, '1');
       }
+      localStorage.setItem('thabat_user_code', val);
       if(data.isMaster){
         localStorage.setItem('thabat_sub_master', '1');
         localStorage.removeItem('thabat_sub_activated_at');
@@ -525,6 +527,7 @@ async function tryUnlock(){
       gateEl.style.display='none';
       mainWrapEl.style.display='block';
       renderSubscriptionStatus();
+      loadUserProfile();
     } else {
       showGateError();
     }
@@ -585,6 +588,67 @@ function renderSubscriptionStatus(){
       ${expired ? '' : '<div class="sub-days-label">يوم متبقي</div>'}
       <div class="sub-desc">${expired ? 'انتهت صلاحية كودك — تواصل معنا لتفعيل كود جديد.' : `ينتهي اشتراكك في: <b>${dateStr}</b>`}</div>
     </div>`;
+}
+
+/* ---------------- ملف المستخدم (وزن/طول/هدف) مرتبط بالكود ---------------- */
+async function loadUserProfile(){
+  const code = localStorage.getItem('thabat_user_code');
+  if(!code) return;
+  try{
+    const res = await fetch(VERIFY_ENDPOINT + '/profile/load', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({code})
+    });
+    const data = await res.json();
+    const p = data.profile;
+    if(!p) return;
+
+    if(p.gender){
+      document.querySelectorAll('#genderSeg button').forEach(b=>{
+        b.classList.toggle('on', b.dataset.val===p.gender);
+      });
+    }
+    if(p.age) document.getElementById('age').value = p.age;
+    if(p.weight) document.getElementById('weight').value = p.weight;
+    if(p.height) document.getElementById('height').value = p.height;
+    if(p.activity) document.getElementById('activity').value = p.activity;
+    if(p.goal){
+      document.querySelectorAll('#goalSeg button').forEach(b=>{
+        b.classList.toggle('on', b.dataset.val===p.goal);
+      });
+      document.getElementById('rateField').style.display = (p.goal==='maintain') ? 'none' : 'flex';
+    }
+    if(p.weeklyRate) document.getElementById('weeklyRate').value = p.weeklyRate;
+  } catch(e){
+    // فشل التحميل ما يمنع استخدام الموقع، بس القيم الافتراضية تفضل كما هي
+  }
+}
+
+async function saveUserProfile(){
+  const code = localStorage.getItem('thabat_user_code');
+  if(!code) return;
+  const gender = document.querySelector('#genderSeg button.on')?.dataset.val;
+  const goal = document.querySelector('#goalSeg button.on')?.dataset.val;
+  const profile = {
+    code,
+    gender,
+    age: document.getElementById('age').value,
+    weight: document.getElementById('weight').value,
+    height: document.getElementById('height').value,
+    activity: document.getElementById('activity').value,
+    goal,
+    weeklyRate: document.getElementById('weeklyRate').value,
+  };
+  try{
+    await fetch(VERIFY_ENDPOINT + '/profile/save', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(profile)
+    });
+  } catch(e){
+    // فشل الحفظ بالسيرفر ما يمنع استخدام الحاسبة محليًا
+  }
 }
 gateInput.focus();
 
@@ -649,6 +713,7 @@ document.getElementById('calcBtn').addEventListener('click',()=>{
 
   dailyGoalCalories = target;
   updateMealUI();
+  saveUserProfile();
 });
 
 /* ---------------- restaurant database ---------------- */
